@@ -141,7 +141,7 @@ redis:
 YAML
 
 info "启动 proxy (image=$PROXY_IMAGE, port=$PROXY_PORT)"
-$DOCKER run -d --name "$CONTAINER" \
+MSYS_NO_PATHCONV=1 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias proxy \
   --add-host=host.docker.internal:host-gateway \

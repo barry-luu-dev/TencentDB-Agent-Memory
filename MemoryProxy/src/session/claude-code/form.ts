@@ -12,23 +12,28 @@
  */
 
 import type { TeamOption } from "../types.js";
-import { computePagination, CC_MAX_OPTIONS as CC_MAX_OPTIONS_SHARED } from "./pagination.js";
+import {
+  computePagination,
+  CC_MAX_OPTIONS as CC_MAX_OPTIONS_SHARED,
+} from "./pagination.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 export const TOOL_NAME = "AskUserQuestion";
 export const TOOLCALL_PREFIX = "toolu_cc_session_init_";
 
-export const TEAM_FORM_TITLE = "会话初始化 — 选择 Team";
-export const AGENT_TASK_FORM_TITLE = "会话初始化 — 选择 Agent 与任务";
-export const RETRY_FORM_TITLE = "未能识别选择，请重新选择";
+export const TEAM_FORM_TITLE = "Session Init — Select Team";
+export const AGENT_TASK_FORM_TITLE = "Session Init — Select Agent & Task";
+export const RETRY_FORM_TITLE = "Selection not recognized, please try again";
 
-export const SKIP_LABEL = "本次不关联（跳过注入，直接放行）";
-export const MORE_LABEL = "更多 →";
+export const SKIP_LABEL = "Skip (no injection, pass through)";
+export const MORE_LABEL = "More →";
 
-export const ASSET_CONFIRM_YES = "是，关联团队资产";
-export const ASSET_CONFIRM_NO = "否，本次不关联";
-export const ASSET_CONFIRM_FORM_TITLE = "会话初始化 — 是否关联团队资产";
+export const ASSET_CONFIRM_YES = "Yes, link team assets";
+export const ASSET_CONFIRM_NO = "No, skip this time";
+export const ASSET_CONFIRM_FORM_TITLE = "Session Init — Link team assets?";
+
+const SESSION_INIT_THINKING_PLACEHOLDER = "[proxy session-init form]";
 
 /**
  * 附在每步 question 文末的通用备注：告诉用户"选择跳过 = 本次 session init 跳过、不注入任何团队资产"。
@@ -36,7 +41,8 @@ export const ASSET_CONFIRM_FORM_TITLE = "会话初始化 — 是否关联团队�
  * 不关联" 就走 SKIP_RE bypass；没识别到的自由文本会 unrecognized → 同样 bypass。
  * 文案与 workbuddy/codex/codebuddy/dsh 五端统一，避免多客户端表述漂移。
  */
-const SKIP_HINT = '（如选择"跳过"选项，本次 session init 将跳过，不注入任何团队资产）';
+const SKIP_HINT =
+  '(Select "Skip" to bypass session init — no team assets will be injected)';
 
 // 分页布局统一走 pagination.ts；此处仅用其常量。
 const CC_MAX_OPTIONS = CC_MAX_OPTIONS_SHARED;
@@ -58,7 +64,12 @@ export function isSessionInitToolCallId(id: string): boolean {
 
 // ── Form Data ──────────────────────────────────────────────────────────────────
 
-export type FormStage = "asset_confirm" | "team" | "agent_select" | "agent_task" | "task_select";
+export type FormStage =
+  | "asset_confirm"
+  | "team"
+  | "agent_select"
+  | "agent_task"
+  | "task_select";
 
 export interface FormData {
   teams: TeamOption[];
@@ -80,18 +91,26 @@ interface CCAskQuestion {
   multiSelect: boolean;
 }
 
-function buildAskUserQuestionArgs(data: FormData): { questions: CCAskQuestion[] } {
+function buildAskUserQuestionArgs(data: FormData): {
+  questions: CCAskQuestion[];
+} {
   const { teams, stage, selectedTeamId, retry } = data;
   const titlePrefix = retry ? "⚠️ " : "";
   const questions: CCAskQuestion[] = [];
 
   if (stage === "asset_confirm") {
     questions.push({
-      question: titlePrefix + "本次对话是否要关联团队资产？" + SKIP_HINT,
-      header: "关联资产",
+      question: titlePrefix + "Link team assets for this session?" + SKIP_HINT,
+      header: "Link Assets",
       options: [
-        { label: ASSET_CONFIRM_YES, description: "选择 Team / Agent / Task，注入团队上下文" },
-        { label: ASSET_CONFIRM_NO, description: "本次不注入任何内容，直接放行" },
+        {
+          label: ASSET_CONFIRM_YES,
+          description: "Select Team / Agent / Task, inject team context",
+        },
+        {
+          label: ASSET_CONFIRM_NO,
+          description: "Skip injection, pass through directly",
+        },
       ],
       multiSelect: false,
     });
@@ -119,7 +138,7 @@ function buildAskUserQuestionArgs(data: FormData): { questions: CCAskQuestion[] 
       );
     }
     questions.push({
-      question: titlePrefix + "请选择本次会话所属的 Team：" + SKIP_HINT,
+      question: titlePrefix + "Select the Team for this session:" + SKIP_HINT,
       header: "Team",
       options: teamOpts.slice(0, CC_MAX_OPTIONS),
       multiSelect: false,
@@ -136,24 +155,27 @@ function buildAskUserQuestionArgs(data: FormData): { questions: CCAskQuestion[] 
     const page = computePagination(team.agents.length, pageIndex);
     const slice = team.agents.slice(page.start, page.end);
 
-    // 只保留 agent 自身描述（有信息量），删掉 "(选完 agent 后可选 N 个任务)" /
-    // "(无任务)" 的尾巴 —— 用户此时正在选 agent，任务数量提示既不影响决策
-    // 也占屏。agent 若无自定义描述则 description 留空，不再回退到 "Agent: 名"
-    // （label 已经有名字）。
-    const combinedOptions: Array<{ label: string; description: string }> = slice.map((a) => ({
-      label: `${a.agent_name} (${a.agent_id.slice(-8)})`,
-      description: a.description ?? "",
-    }));
+    // Only keep the agent's own description (if informative). Agent descriptions
+    // without custom text are left empty — the label already has the name.
+    const combinedOptions: Array<{ label: string; description: string }> =
+      slice.map((a) => ({
+        label: `${a.agent_name} (${a.agent_id.slice(-8)})`,
+        description: a.description ?? "",
+      }));
 
     if (!page.isLastPage) {
       const remaining = page.total - page.end;
-      combinedOptions.push({ label: MORE_LABEL, description: `查看下一批（还剩 ${remaining} 个 Agent）` });
+      combinedOptions.push({
+        label: MORE_LABEL,
+        description: `View next page (${remaining} agents remaining)`,
+      });
     }
-    // 末页不再追加 SKIP：主动跳过只在 asset_confirm 提供；后续阶段"异常/未识别"
-    // 由 init.ts 兜底 bypass。
+    // The last page no longer appends SKIP: explicit skip is only offered at
+    // asset_confirm; later-stage "unrecognized" is handled by init.ts bypass.
     //
-    // pagination.ts 保证每页真实项数 ≥ 2（total > 4 时；total ≤ 4 时单页含全部
-    // 4 个 slot 铺满，无 MORE）；此处不该再收到 <2 的 combinedOptions。
+    // pagination.ts guarantees ≥ 2 real items per page (total > 4 → paginated;
+    // total ≤ 4 → single page with all 4 slots filled, no MORE); we should
+    // never receive < 2 combinedOptions here.
     if (combinedOptions.length < 2) {
       throw new Error(
         `[cc form] agent page ${pageIndex} has ${combinedOptions.length} option(s); ` +
@@ -161,10 +183,17 @@ function buildAskUserQuestionArgs(data: FormData): { questions: CCAskQuestion[] 
       );
     }
 
-    const pageSuffix = page.totalPages > 1 ? `（第 ${pageIndex + 1}/${page.totalPages} 页）` : "";
+    const pageSuffix =
+      page.totalPages > 1 ? ` (Page ${pageIndex + 1}/${page.totalPages})` : "";
     questions.push({
-      question: titlePrefix + `请选择「${team.team_name}」下要使用的 Agent${pageSuffix}：` + SKIP_HINT,
-      header: page.totalPages > 1 ? `Agent ${pageIndex + 1}/${page.totalPages}`.slice(0, 12) : "Agent",
+      question:
+        titlePrefix +
+        `Select an Agent for "${team.team_name}"${pageSuffix}:` +
+        SKIP_HINT,
+      header:
+        page.totalPages > 1
+          ? `Agent ${pageIndex + 1}/${page.totalPages}`.slice(0, 12)
+          : "Agent",
       options: combinedOptions.slice(0, CC_MAX_OPTIONS),
       multiSelect: false,
     });
@@ -179,24 +208,25 @@ function buildAskUserQuestionArgs(data: FormData): { questions: CCAskQuestion[] 
     const page = computePagination(team.tasks.length, taskPageIndex);
     const taskSlice = team.tasks.slice(page.start, page.end);
 
-    // description 留空 —— label 已含 task 名 + id 后缀，"Task: name" 只是噪音。
-    // 虚拟兜底条目（isDefault）不拼 id 后缀，反正只有一个不会重名歧义。
-    const taskOpts: Array<{ label: string; description: string }> = taskSlice.map((t) => ({
-      label: t.isDefault
-        ? t.task_name
-        : `${t.task_name} (${t.task_id.slice(-8)})`,
-      description: "",
-    }));
+    // description left empty — label already has task name + id suffix.
+    // Default placeholder entries (isDefault) omit the id suffix since there's only one.
+    const taskOpts: Array<{ label: string; description: string }> =
+      taskSlice.map((t) => ({
+        label: t.isDefault
+          ? t.task_name
+          : `${t.task_name} (${t.task_id.slice(-8)})`,
+        description: "",
+      }));
 
     if (!page.isLastPage) {
       const remaining = page.total - page.end;
       taskOpts.push({
         label: MORE_LABEL,
-        description: `查看下一批（还剩 ${remaining} 个任务）`,
+        description: `View next page (${remaining} tasks remaining)`,
       });
     }
 
-    // 同 agent 阶段：pagination.ts 保证 count ≥ 2，此处 <2 说明分页器有 bug。
+    // Same as agent stage: pagination.ts guarantees count ≥ 2.
     if (taskOpts.length < 2) {
       throw new Error(
         `[cc form] task page ${taskPageIndex} has ${taskOpts.length} option(s); ` +
@@ -204,10 +234,19 @@ function buildAskUserQuestionArgs(data: FormData): { questions: CCAskQuestion[] 
       );
     }
 
-    const taskPageSuffix = page.totalPages > 1 ? `（第 ${taskPageIndex + 1}/${page.totalPages} 页）` : "";
+    const taskPageSuffix =
+      page.totalPages > 1
+        ? ` (Page ${taskPageIndex + 1}/${page.totalPages})`
+        : "";
     questions.push({
-      question: titlePrefix + `请选择「${team.team_name}」下要关联的任务${taskPageSuffix}：` + SKIP_HINT,
-      header: page.totalPages > 1 ? `Task ${taskPageIndex + 1}/${page.totalPages}`.slice(0, 12) : "Task",
+      question:
+        titlePrefix +
+        `Select a task for "${team.team_name}"${taskPageSuffix}:` +
+        SKIP_HINT,
+      header:
+        page.totalPages > 1
+          ? `Task ${taskPageIndex + 1}/${page.totalPages}`.slice(0, 12)
+          : "Task",
       options: taskOpts.slice(0, CC_MAX_OPTIONS),
       multiSelect: false,
     });
@@ -237,39 +276,77 @@ export function buildFormResponse(data: FormData): Response {
 
   const stream = new ReadableStream({
     start(controller) {
-      controller.enqueue(sse("message_start", {
-        type: "message_start",
-        message: {
-          id: msgId, type: "message", role: "assistant", model,
-          content: [], stop_reason: null, stop_sequence: null,
-          usage: { input_tokens: 0, output_tokens: 0 },
-        },
-      }));
+      controller.enqueue(
+        sse("message_start", {
+          type: "message_start",
+          message: {
+            id: msgId,
+            type: "message",
+            role: "assistant",
+            model,
+            content: [],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
+        }),
+      );
 
-      controller.enqueue(sse("content_block_start", {
-        type: "content_block_start",
-        index: 0,
-        content_block: {
-          type: "tool_use",
-          id: toolUseId,
-          name: TOOL_NAME,
-          input: {},
-        },
-      }));
+      // thinking 必须在 tool_use 之前。DeepSeek thinking 模式在 tool-call 后
+      // 要求回传 content[].thinking（#990）；无 thinking 的假表单会让下一轮 400。
+      controller.enqueue(
+        sse("content_block_start", {
+          type: "content_block_start",
+          index: 0,
+          content_block: { type: "thinking", thinking: "" },
+        }),
+      );
+      controller.enqueue(
+        sse("content_block_delta", {
+          type: "content_block_delta",
+          index: 0,
+          delta: {
+            type: "thinking_delta",
+            thinking: SESSION_INIT_THINKING_PLACEHOLDER,
+          },
+        }),
+      );
+      controller.enqueue(
+        sse("content_block_stop", { type: "content_block_stop", index: 0 }),
+      );
 
-      controller.enqueue(sse("content_block_delta", {
-        type: "content_block_delta",
-        index: 0,
-        delta: { type: "input_json_delta", partial_json: inputJson },
-      }));
+      controller.enqueue(
+        sse("content_block_start", {
+          type: "content_block_start",
+          index: 1,
+          content_block: {
+            type: "tool_use",
+            id: toolUseId,
+            name: TOOL_NAME,
+            input: {},
+          },
+        }),
+      );
 
-      controller.enqueue(sse("content_block_stop", { type: "content_block_stop", index: 0 }));
+      controller.enqueue(
+        sse("content_block_delta", {
+          type: "content_block_delta",
+          index: 1,
+          delta: { type: "input_json_delta", partial_json: inputJson },
+        }),
+      );
 
-      controller.enqueue(sse("message_delta", {
-        type: "message_delta",
-        delta: { stop_reason: "tool_use", stop_sequence: null },
-        usage: { output_tokens: 0 },
-      }));
+      controller.enqueue(
+        sse("content_block_stop", { type: "content_block_stop", index: 1 }),
+      );
+
+      controller.enqueue(
+        sse("message_delta", {
+          type: "message_delta",
+          delta: { stop_reason: "tool_use", stop_sequence: null },
+          usage: { output_tokens: 0 },
+        }),
+      );
 
       controller.enqueue(sse("message_stop", { type: "message_stop" }));
       controller.close();
@@ -278,6 +355,10 @@ export function buildFormResponse(data: FormData): Response {
 
   return new Response(stream, {
     status: 200,
-    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" },
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    },
   });
 }

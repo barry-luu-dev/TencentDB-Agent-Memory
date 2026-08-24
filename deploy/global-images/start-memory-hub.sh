@@ -44,7 +44,7 @@ detect_host_ip() {
     [[ -n "$ip" ]] && { echo "$ip"; return; }
   fi
   # macOS
-  if command -v ipconfig >/dev/null 2>&1; then
+  if [[ "$(uname -s 2>/dev/null)" == "Darwin" ]] && command -v ipconfig >/dev/null 2>&1; then
     for iface in en0 en1 en2; do
       ip=$(ipconfig getifaddr "$iface" 2>/dev/null)
       [[ -n "$ip" ]] && { echo "$ip"; return; }
@@ -61,6 +61,7 @@ detect_host_ip() {
 if [[ -z "${MEMORY_HUB_PROXY_PUBLIC_URL+x}" ]]; then
   # 未设 → 用探测出的 IP + PROXY_PORT 拼默认值
   _host_ip=$(detect_host_ip)
+  [[ "$_host_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || _host_ip="localhost"
   MEMORY_HUB_PROXY_PUBLIC_URL="http://${_host_ip}:${PROXY_PORT:-8096}"
   info "自动探测宿主机地址: MEMORY_HUB_PROXY_PUBLIC_URL=$MEMORY_HUB_PROXY_PUBLIC_URL"
   info "  (如需覆盖，在 .env 里显式设 MEMORY_HUB_PROXY_PUBLIC_URL=http://<your-ip>:${PROXY_PORT:-8096})"
@@ -86,7 +87,7 @@ rm_container_if_exists "$CONTAINER"
 # 内部 knowledge 通过 upstream memory 调 LLM 走 custom 模式，直接指向 MEMORY_LLM_*
 # LLM_MODE=custom → 不走 memory 的 LLM proxy，而是 knowledge 直连用户提供的端点
 info "启动 memory-hub (image=$MEMORY_HUB_IMAGE, panel=$PANEL_PORT knowledge=$KNOWLEDGE_PORT)"
-$DOCKER run -d --name "$CONTAINER" \
+MSYS_NO_PATHCONV=1 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias memory-hub \
   --add-host=host.docker.internal:host-gateway \

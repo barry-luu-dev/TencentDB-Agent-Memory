@@ -27,6 +27,11 @@ MEMORY_CORE_ADMIN_USERNAME="${MEMORY_CORE_ADMIN_USERNAME:-admin}"
 
 # admin user_key 持久化位置（宿主机侧；volume 数据被清后需一并删掉此文件）
 ADMIN_KEY_FILE="${MEMORY_CORE_ADMIN_KEY_FILE:-$SCRIPT_DIR/.admin-key}"
+CURL="$(command -v curl || true)"
+if [[ -z "$CURL" ]]; then
+  echo "curl 不可用，无法初始化或校验 admin user" >&2
+  exit 1
+fi
 
 if [[ -n "$MEMORY_CORE_GATEWAY_API_KEY" ]]; then
   warn "MEMORY_CORE_GATEWAY_API_KEY 非空 —— proxy 的 sessionInit/auth 目前会因缺 Bearer 而失败。"
@@ -122,7 +127,7 @@ skill:
 YAML
 
 info "启动 memory-core (image=$MEMORY_CORE_IMAGE, port=$MEMORY_CORE_PORT)"
-$DOCKER run -d --name "$CONTAINER" \
+MSYS_NO_PATHCONV=1 $DOCKER run -d --name "$CONTAINER" \
   --network "$NETWORK" \
   --network-alias memory-core \
   -p "${MEMORY_CORE_PORT}:8420" \
@@ -163,7 +168,7 @@ generate_user_key() {
 verify_user_key() {
   local key="$1"
   local code
-  code=$(/usr/bin/curl -sS -o /dev/null -w "%{http_code}" --max-time 5 \
+  code=$("$CURL" -sS -o /dev/null -w "%{http_code}" --max-time 5 \
     -X POST -H "Content-Type: application/json" \
     -H "x-tdai-service-id: default" \
     ${MEMORY_CORE_GATEWAY_API_KEY:+-H "Authorization: Bearer ${MEMORY_CORE_GATEWAY_API_KEY}"} \
@@ -184,7 +189,7 @@ fi
 
 init_body=$(printf '{"username":"%s","user_key":"%s"}' \
   "$MEMORY_CORE_ADMIN_USERNAME" "$ADMIN_KEY")
-init_resp=$(/usr/bin/curl -sS -o /tmp/init-admin.$$ -w "%{http_code}" \
+init_resp=$("$CURL" -sS -o /tmp/init-admin.$$ -w "%{http_code}" \
   -X POST -H "Content-Type: application/json" \
   ${MEMORY_CORE_GATEWAY_API_KEY:+-H "Authorization: Bearer ${MEMORY_CORE_GATEWAY_API_KEY}"} \
   -H "x-tdai-service-id: default" \

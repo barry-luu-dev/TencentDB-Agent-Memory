@@ -76,7 +76,7 @@ memory:
   storeBackend: "sqlite"
 
   embedding:
-    provider: "none"               # 默认关闭向量搜索, 仅用 BM25
+    provider: "none" # 默认关闭向量搜索, 仅用 BM25
     # 开启向量搜索示例:
     # provider: "openai"
     # baseUrl: "https://api.openai.com/v1"
@@ -86,7 +86,7 @@ memory:
 
   bm25:
     enabled: true
-    language: "zh"
+    language: "en"
 
 # ── Skill 模块 ──
 # Skill 是额外能力，数据存储在 {baseDir}/skills/ 下，不影响 Memory 引擎。
@@ -101,33 +101,33 @@ skill:
   # contentBackend: "local"
 
   routing:
-    mode: "bm25"          # bm25 | embedding | hybrid（后两者需 memory.embedding 启用，否则降级 bm25）
-    searchTopK: 20        # listing 接口最多注入多少条 skill（name+description）
+    mode: "bm25" # bm25 | embedding | hybrid（后两者需 memory.embedding 启用，否则降级 bm25）
+    searchTopK: 20 # listing 接口最多注入多少条 skill（name+description）
     # 以下为预留字段：resolver 有默认值但运行时暂无消费者，保持默认即可。
     # hybridAlpha: 0.3
     # charBudgetPercent: 0.01
     # fastPathMinNameLength: 4
 
   extraction:
-    enabled: true                 # 需要顶层 llm 配置有效（baseUrl + apiKey）
-    maxIterations: 16             # Review Agent tool-calling 最大迭代轮数
+    enabled: true # 需要顶层 llm 配置有效（baseUrl + apiKey）
+    maxIterations: 16 # Review Agent tool-calling 最大迭代轮数
     # model: "deepseek-v3.2"      # 【复用】不填则复用顶层 llm.model
     # toolCallThreshold: 10       # 预留字段，暂无消费者
     # 说明：headChars / tailChars 在 service 模式的 per-instance extractor 路径不透传，
     #      因此不在 yaml 暴露；如需调整请改 skill-extractor.ts 默认或补 server.ts 透传。
     queue:
-      backend: "local"            # standalone 用进程内队列；service 改 "redis"
-      keyPrefix: "tdai"           # Redis key 前缀（redis 后端）
-      resultTtlSeconds: 86400     # 抽取结果 hash 的 TTL（秒）
-      lockTtlMs: 600000           # agent 级锁 TTL（毫秒，10min）
-      maxRetries: 2               # 抽取失败最大重试次数
-      retryBackoffsMs: [5000, 15000]  # 每次重试的退避间隔（毫秒）
+      backend: "local" # standalone 用进程内队列；service 改 "redis"
+      keyPrefix: "tdai" # Redis key 前缀（redis 后端）
+      resultTtlSeconds: 86400 # 抽取结果 hash 的 TTL（秒）
+      lockTtlMs: 600000 # agent 级锁 TTL（毫秒，10min）
+      maxRetries: 2 # 抽取失败最大重试次数
+      retryBackoffsMs: [5000, 15000] # 每次重试的退避间隔（毫秒）
       # 【复用】service 模式复用顶层 redis 共享客户端，redisUrl 留空即可；
       #        探测到共享客户端时即使 backend=local 也会自动切 redis。
       # redisUrl: "redis://:password@host:6379/0"
 
   resources:
-    maxResourceSizeBytes: 5000000  # ✅ 生效：单个资源文件上限（5MB），超限拒写
+    maxResourceSizeBytes: 5000000 # ✅ 生效：单个资源文件上限（5MB），超限拒写
     # 以下为未接线字段，已从活跃配置移除：
     #   allowExecutable — 本意为可执行资源安全开关，但未传入 SkillResourceStore，不拦截
     #   downloadDir     — 本意为资源落盘临时目录，但资源读取走内存返回，无消费者
@@ -137,7 +137,7 @@ skill:
 # ── 可观测性配置（本地开发） ──
 observability:
   otel:
-    enabled: false                    # 本地不接智研，关掉 OTel gRPC
+    enabled: false # 本地不接智研，关掉 OTel gRPC
   clickhouse:
     enabled: false
   kafka:

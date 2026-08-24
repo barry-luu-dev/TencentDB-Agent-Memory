@@ -34,13 +34,13 @@ export const TOOLCALL_PREFIX = "call_codex_session_init_";
  */
 export const TOOLCALL_ID_PREFIX = "fc_codex_session_init_";
 
-export const TEAM_FORM_TITLE = "会话初始化 — 选择 Team";
-export const AGENT_TASK_FORM_TITLE = "会话初始化 — 选择 Agent 与任务";
-export const RETRY_FORM_TITLE = "未能识别选择，请重新选择";
+export const TEAM_FORM_TITLE = "Session Init — Select Team";
+export const AGENT_TASK_FORM_TITLE = "Session Init — Select Agent & Task";
+export const RETRY_FORM_TITLE = "Selection not recognized, please try again";
 
-export const ASSET_CONFIRM_YES = "是，关联团队资产";
-export const ASSET_CONFIRM_NO = "否，本次不关联";
-export const ASSET_CONFIRM_FORM_TITLE = "会话初始化 — 是否关联团队资产";
+export const ASSET_CONFIRM_YES = "Yes, link team assets";
+export const ASSET_CONFIRM_NO = "No, skip this time";
+export const ASSET_CONFIRM_FORM_TITLE = "Session Init — Link team assets?";
 
 /**
  * codex 分页 "更多..." 选项的稳定标记（写在 option.label 里，用户点了会
@@ -51,7 +51,7 @@ export const ASSET_CONFIRM_FORM_TITLE = "会话初始化 — 是否关联团队�
  * MARKER 本身不进 label（避免"__..."字符污染 UI 显示）。
  */
 export const CODEX_MORE_MARKER = "__codex_more_marker__" as const;
-export const CODEX_MORE_LABEL = "更多...";
+export const CODEX_MORE_LABEL = "More...";
 
 /**
  * 客户端 Default 模式下 gate 拦截的前缀字符串。
@@ -64,7 +64,8 @@ export const DEFAULT_GATE_PREFIX = "request_user_input is unavailable in";
  * Codex 的 request_user_input 在 Plan 模式下展示 questions + options 给用户；
  * 跳过入口为「否，本次不关联」按钮。文案与 claude-code/workbuddy/codebuddy/dsh 五端统一。
  */
-const SKIP_HINT = '（如选择"跳过"选项，本次 session init 将跳过，不注入任何团队资产）';
+const SKIP_HINT =
+  '(Select "Skip" to bypass session init — no team assets will be injected)';
 
 /** Returns true if the given string contains any codex form title marker. */
 export function containsFormTitle(s: string): boolean {
@@ -102,7 +103,12 @@ export function isDefaultModeGate(output: string): boolean {
  * 老 "agent_task" 值保留（用于 CB 客户端复用 CB 状态机时的 legacy 路径与旧
  * 单元测试），codex 新会话不再使用它。
  */
-export type FormStage = "asset_confirm" | "team" | "agent_select" | "task_select" | "agent_task";
+export type FormStage =
+  | "asset_confirm"
+  | "team"
+  | "agent_select"
+  | "task_select"
+  | "agent_task";
 
 export interface FormData {
   teams: TeamOption[];
@@ -151,7 +157,9 @@ export interface FormData {
  *
  * 返回空数组 → CB 会走 `pending_*` 分支的重试/兜底逻辑。
  */
-export function codexFormAnswersAsMessages(input: unknown): Array<Record<string, unknown>> {
+export function codexFormAnswersAsMessages(
+  input: unknown,
+): Array<Record<string, unknown>> {
   if (!Array.isArray(input)) return [];
 
   let lastOutput: string | null = null;
@@ -160,7 +168,8 @@ export function codexFormAnswersAsMessages(input: unknown): Array<Record<string,
     if (!it || typeof it !== "object") continue;
     if (it.type !== "function_call_output") continue;
     const callId = it.call_id;
-    if (typeof callId !== "string" || !callId.startsWith(TOOLCALL_PREFIX)) continue;
+    if (typeof callId !== "string" || !callId.startsWith(TOOLCALL_PREFIX))
+      continue;
     const output = it.output;
     if (typeof output === "string") lastOutput = output;
   }
@@ -233,7 +242,11 @@ export interface CodexMoreDetection {
 export function detectCodexMore(input: unknown): CodexMoreDetection {
   const result: CodexMoreDetection = {
     hasMore: false,
-    perQuestion: { team_select: false, agent_select: false, task_select: false },
+    perQuestion: {
+      team_select: false,
+      agent_select: false,
+      task_select: false,
+    },
   };
   if (!Array.isArray(input)) return result;
 
@@ -243,7 +256,8 @@ export function detectCodexMore(input: unknown): CodexMoreDetection {
     if (!it || typeof it !== "object") continue;
     if (it.type !== "function_call_output") continue;
     const callId = it.call_id;
-    if (typeof callId !== "string" || !callId.startsWith(TOOLCALL_PREFIX)) continue;
+    if (typeof callId !== "string" || !callId.startsWith(TOOLCALL_PREFIX))
+      continue;
     const output = it.output;
     if (typeof output === "string") lastOutput = output;
   }
@@ -288,7 +302,11 @@ function collectMorePerQuestion(node: unknown, out: CodexMoreDetection): void {
     for (const [qid, val] of Object.entries(answers)) {
       if (typeof val !== "string") continue;
       if (!val.includes(CODEX_MORE_LABEL)) continue;
-      if (qid === "team_select" || qid === "agent_select" || qid === "task_select") {
+      if (
+        qid === "team_select" ||
+        qid === "agent_select" ||
+        qid === "task_select"
+      ) {
         (out.perQuestion as Record<string, boolean>)[qid] = true;
       }
     }
@@ -296,12 +314,17 @@ function collectMorePerQuestion(node: unknown, out: CodexMoreDetection): void {
 
   // { type: "multi_question_result", questions: [{id, answer}] }
   const mqr = (obj.result ?? obj) as Record<string, unknown> | undefined;
-  if (mqr && mqr.type === "multi_question_result" && Array.isArray(mqr.questions)) {
+  if (
+    mqr &&
+    mqr.type === "multi_question_result" &&
+    Array.isArray(mqr.questions)
+  ) {
     for (const q of mqr.questions) {
       if (!q || typeof q !== "object") continue;
       const qo = q as Record<string, unknown>;
       const qid = typeof qo.id === "string" ? qo.id : "";
-      const cand = qo.answer ?? qo.answers ?? qo.selected ?? qo.selectedOption ?? qo.value;
+      const cand =
+        qo.answer ?? qo.answers ?? qo.selected ?? qo.selectedOption ?? qo.value;
       let val: string | null = null;
       if (typeof cand === "string") val = cand;
       else if (Array.isArray(cand)) {
@@ -309,7 +332,11 @@ function collectMorePerQuestion(node: unknown, out: CodexMoreDetection): void {
         if (typeof f === "string") val = f;
       }
       if (val && val.includes(CODEX_MORE_LABEL)) {
-        if (qid === "team_select" || qid === "agent_select" || qid === "task_select") {
+        if (
+          qid === "team_select" ||
+          qid === "agent_select" ||
+          qid === "task_select"
+        ) {
           (out.perQuestion as Record<string, boolean>)[qid] = true;
         }
       }
@@ -368,8 +395,8 @@ interface CodexOption {
 }
 
 interface CodexQuestion {
-  id: string;       // snake_case 稳定标识
-  header: string;   // ≤ 12 chars UI 标签
+  id: string; // snake_case 稳定标识
+  header: string; // ≤ 12 chars UI 标签
   question: string; // 展示给用户的完整问题
   options: CodexOption[];
 }
@@ -395,14 +422,20 @@ function buildOptions(
 ): CodexOption[] {
   if (entries.length === 0) {
     return [
-      { label: "跳过", description: "本次不关联，直接开始对话" },
-      { label: "重试", description: "重新拉取列表再选" },
+      {
+        label: "Skip",
+        description: "Skip this session, start chatting directly",
+      },
+      { label: "Retry", description: "Re-fetch the list and try again" },
     ];
   }
   if (entries.length === 1) {
     return [
       entries[0]!,
-      { label: "跳过", description: "本次不关联，直接开始对话" },
+      {
+        label: "Skip",
+        description: "Skip this session, start chatting directly",
+      },
     ];
   }
 
@@ -418,52 +451,60 @@ function buildOptions(
   const morePageNo = safePage + 2; // human-facing (1-based, next page)
   const moreOption: CodexOption = {
     label: CODEX_MORE_LABEL,
-    description: `查看下一批候选（第 ${morePageNo}/${page.totalPages} 页，还剩 ${remaining} 个）`,
+    description: `View next page (Page ${morePageNo}/${page.totalPages}, ${remaining} remaining)`,
   };
   return [...slice, moreOption];
 }
 
 function pageSuffix(pageIndex: number, totalPages: number): string {
-  return totalPages > 1 ? `（第 ${pageIndex + 1}/${totalPages} 页）` : "";
+  return totalPages > 1 ? ` (Page ${pageIndex + 1}/${totalPages})` : "";
 }
 
 function buildQuestions(data: FormData): CodexQuestion[] {
   const { teams, stage, selectedTeamId, retry } = data;
-  const retryHint = retry ? "（上次未识别，请重新选择）" : "";
+  const retryHint = retry
+    ? " (last selection not recognized, please try again)"
+    : "";
   const teamPage = Math.max(0, data.teamPage ?? 0);
   const agentPage = Math.max(0, data.agentPage ?? 0);
   const taskPage = Math.max(0, data.taskPage ?? 0);
 
   if (stage === "asset_confirm") {
-    return [{
-      id: "asset_confirm",
-      header: clampHeader("是否关联资产"),
-      question: `本次对话是否要关联团队资产（Skill / Memory / Agent / Task / Knowledge）？${retryHint}`,
-      options: [
-        {
-          label: ASSET_CONFIRM_YES,
-          description: "接下来会请你选择 Team、Agent、Task，选完后每轮对话会自动注入相关资产。",
-        },
-        {
-          label: ASSET_CONFIRM_NO,
-          description: "本次会话跳过团队资产，直接开始对话。",
-        },
-      ],
-    }];
+    return [
+      {
+        id: "asset_confirm",
+        header: clampHeader("Link Assets"),
+        question: `Link team assets (Skill / Memory / Agent / Task / Knowledge) for this session?${retryHint}`,
+        options: [
+          {
+            label: ASSET_CONFIRM_YES,
+            description:
+              "Next you'll choose Team, Agent, and Task. Each turn will auto-inject relevant assets.",
+          },
+          {
+            label: ASSET_CONFIRM_NO,
+            description:
+              "Skip team assets for this session, start chatting directly.",
+          },
+        ],
+      },
+    ];
   }
 
   if (stage === "team") {
     const entries = teams.map((t) => ({
       label: `${t.team_name} (${t.team_id.slice(-8)})`,
-      description: `Team ID: ${t.team_id}${t.agents?.length ? `，含 ${t.agents.length} 个 Agent` : ""}`,
+      description: `Team ID: ${t.team_id}${t.agents?.length ? `, ${t.agents.length} Agent(s)` : ""}`,
     }));
     const pageInfo = computeCodexPagination(entries.length, teamPage);
-    return [{
-      id: "team_select",
-      header: clampHeader("选 Team"),
-      question: `请选择本次会话所属的 Team${pageSuffix(teamPage, pageInfo.totalPages)}${retryHint}：`,
-      options: buildOptions(entries, teamPage),
-    }];
+    return [
+      {
+        id: "team_select",
+        header: clampHeader("Team"),
+        question: `Select the Team for this session${pageSuffix(teamPage, pageInfo.totalPages)}${retryHint}:`,
+        options: buildOptions(entries, teamPage),
+      },
+    ];
   }
 
   // stage in { "agent_select", "task_select", "agent_task" (legacy) }
@@ -473,7 +514,10 @@ function buildQuestions(data: FormData): CodexQuestion[] {
   const questions: CodexQuestion[] = [];
 
   // Agent question — 新 stage "agent_select" 或 legacy "agent_task" 都渲染。
-  if ((stage === "agent_select" || stage === "agent_task") && team.agents.length > 0) {
+  if (
+    (stage === "agent_select" || stage === "agent_task") &&
+    team.agents.length > 0
+  ) {
     const entries = team.agents.map((a) => ({
       label: `${a.agent_name} (${a.agent_id.slice(-8)})`,
       description: `Agent ID: ${a.agent_id}`,
@@ -481,26 +525,31 @@ function buildQuestions(data: FormData): CodexQuestion[] {
     const pageInfo = computeCodexPagination(entries.length, agentPage);
     questions.push({
       id: "agent_select",
-      header: clampHeader("选 Agent"),
-      question: `请选择「${team.team_name}」下要使用的 Agent${pageSuffix(agentPage, pageInfo.totalPages)}${retryHint}：`,
+      header: clampHeader("Agent"),
+      question: `Select an Agent for "${team.team_name}"${pageSuffix(agentPage, pageInfo.totalPages)}${retryHint}:`,
       options: buildOptions(entries, agentPage),
     });
   }
 
   // Task question — 新 stage "task_select" 或 legacy "agent_task" 都渲染。
-  if ((stage === "task_select" || stage === "agent_task") && team.tasks.length > 0) {
+  if (
+    (stage === "task_select" || stage === "agent_task") &&
+    team.tasks.length > 0
+  ) {
     const entries = team.tasks.map((t) => ({
-      label: t.isDefault ? t.task_name : `${t.task_name} (${t.task_id.slice(-8)})`,
+      label: t.isDefault
+        ? t.task_name
+        : `${t.task_name} (${t.task_id.slice(-8)})`,
       description: t.isDefault
-        ? "该 Agent 的默认任务（推荐）"
+        ? "Default task for this Agent (recommended)"
         : `Task ID: ${t.task_id}`,
     }));
     const pageInfo = computeCodexPagination(entries.length, taskPage);
     const opts = buildOptions(entries, taskPage);
     questions.push({
       id: "task_select",
-      header: clampHeader("选 Task"),
-      question: `请选择「${team.team_name}」下关联的任务${pageSuffix(taskPage, pageInfo.totalPages)}${retryHint}：`,
+      header: clampHeader("Task"),
+      question: `Select a task for "${team.team_name}"${pageSuffix(taskPage, pageInfo.totalPages)}${retryHint}:`,
       options: opts,
     });
   }
@@ -581,7 +630,9 @@ function buildStreamingResponse(
   //（跟 SSE `event:` 头同名），否则 codex 客户端解析器读不到 event 类型，
   // 表现为 tool_call 没进客户端 UI（form 不弹）。对齐抓包底稿 §7.5.2/3 真实上游行为。
   const sse = (event: string, d: Record<string, unknown>) =>
-    encoder.encode(`event: ${event}\ndata: ${JSON.stringify({ type: event, ...d })}\n\n`);
+    encoder.encode(
+      `event: ${event}\ndata: ${JSON.stringify({ type: event, ...d })}\n\n`,
+    );
 
   const functionCallItem = {
     type: "function_call" as const,
@@ -602,49 +653,63 @@ function buildStreamingResponse(
   const stream = new ReadableStream({
     start(controller) {
       // response.created
-      controller.enqueue(sse("response.created", {
-        response: { ...responseObj, status: "in_progress", output: [] },
-      }));
+      controller.enqueue(
+        sse("response.created", {
+          response: { ...responseObj, status: "in_progress", output: [] },
+        }),
+      );
 
       // response.in_progress
-      controller.enqueue(sse("response.in_progress", {
-        response: { ...responseObj, status: "in_progress", output: [] },
-      }));
+      controller.enqueue(
+        sse("response.in_progress", {
+          response: { ...responseObj, status: "in_progress", output: [] },
+        }),
+      );
 
       // response.output_item.added (function_call) —— arguments 先空字符串,
       // 通过 arguments.delta 流式生成 (对齐真实上游帧序列)
-      controller.enqueue(sse("response.output_item.added", {
-        output_index: 0,
-        item: { ...functionCallItem, arguments: "" },
-      }));
+      controller.enqueue(
+        sse("response.output_item.added", {
+          output_index: 0,
+          item: { ...functionCallItem, arguments: "" },
+        }),
+      );
 
       // response.function_call_arguments.delta —— 关键：真实上游 event 携带
       // item_id 用于跟 output_item.added 里的 item.id 对齐；缺 item_id 客户端
       // 无法把 delta 挂回对应 tool call。item.id 现在是 fcId (fc_ 前缀)，
       // item_id 必须同源。
-      controller.enqueue(sse("response.function_call_arguments.delta", {
-        output_index: 0,
-        item_id: fcId,
-        delta: argsJson,
-      }));
+      controller.enqueue(
+        sse("response.function_call_arguments.delta", {
+          output_index: 0,
+          item_id: fcId,
+          delta: argsJson,
+        }),
+      );
 
       // response.function_call_arguments.done
-      controller.enqueue(sse("response.function_call_arguments.done", {
-        output_index: 0,
-        item_id: fcId,
-        arguments: argsJson,
-      }));
+      controller.enqueue(
+        sse("response.function_call_arguments.done", {
+          output_index: 0,
+          item_id: fcId,
+          arguments: argsJson,
+        }),
+      );
 
       // response.output_item.done (function_call complete)
-      controller.enqueue(sse("response.output_item.done", {
-        output_index: 0,
-        item: functionCallItem,
-      }));
+      controller.enqueue(
+        sse("response.output_item.done", {
+          output_index: 0,
+          item: functionCallItem,
+        }),
+      );
 
       // response.completed
-      controller.enqueue(sse("response.completed", {
-        response: responseObj,
-      }));
+      controller.enqueue(
+        sse("response.completed", {
+          response: responseObj,
+        }),
+      );
 
       controller.close();
     },
@@ -655,7 +720,7 @@ function buildStreamingResponse(
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
+      Connection: "keep-alive",
     },
   });
 }

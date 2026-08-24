@@ -18,14 +18,13 @@ data:
 # ── LLM (必填) ──
 llm:
   baseUrl: "https://api.openai.com/v1"
-  apiKey: "${TDAI_LLM_API_KEY}"    # 通过环境变量注入
+  apiKey: "${TDAI_LLM_API_KEY}" # 通过环境变量注入
   model: "gpt-4o"
   maxTokens: 4096
   timeoutMs: 120000
 
 # ── Memory 引擎配置 ──
 memory:
-
   capture:
     enabled: true
 
@@ -69,7 +68,7 @@ memory:
   #   timeout: 10000
 
   embedding:
-    provider: "none"               # 默认关闭向量搜索, 仅用 BM25
+    provider: "none" # 默认关闭向量搜索, 仅用 BM25
     # 开启向量搜索示例:
     # provider: "openai"
     # baseUrl: "https://api.openai.com/v1"
@@ -79,7 +78,7 @@ memory:
 
   bm25:
     enabled: true
-    language: "zh"
+    language: "en"
 
 # ── Skill 模块（可选，默认关闭）──
 # Skill 是额外能力的加入，不影响上面的 Memory 引擎。

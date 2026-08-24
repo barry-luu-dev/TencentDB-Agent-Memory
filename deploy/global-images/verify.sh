@@ -37,7 +37,11 @@ done
 
 ERRORS=0
 WARNS=0
-CURL=/usr/bin/curl
+CURL="$(command -v curl || true)"
+if [[ -z "$CURL" ]]; then
+  echo "${C_RED}[error]${C_RST} curl 不可用，无法检查 LLM 通路" >&2
+  exit 1
+fi
 
 # ─── LLM 通路检查函数 ───────────────────────────────────────────────
 # check_llm_openai <label> <base_url> <api_key> <model>
@@ -131,6 +135,9 @@ check_llm_anthropic() {
 # check_llm_group <label> <base_url> <api_key> <model> <protocol>
 check_llm_group() {
   local label="$1" base="$2" key="$3" model="$4" proto="${5:-openai}"
+  # host.docker.internal is only resolvable from containers; verify the same
+  # host service through localhost when this check runs on the host.
+  base="${base//host.docker.internal/127.0.0.1}"
   info "检查 $label 通路（协议=${proto}，base=${base}，model=${model}）..."
   case "$proto" in
     anthropic) check_llm_anthropic "$label" "$base" "$key" "$model" ;;
