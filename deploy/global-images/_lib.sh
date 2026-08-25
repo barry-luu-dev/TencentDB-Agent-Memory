@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# 通用工具函数：加载 .env、校验必填参数、等待容器 health、清理旧容器。
-# 由 start-*.sh 通过 `source _lib.sh` 引入，不单独执行。
+# Common utility functions: load .env, validate required params, wait for container
+# health, clean up old containers. Sourced by start-*.sh via `source _lib.sh`, not run standalone.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
 
-# 颜色
+# Colors
 if [[ -t 1 ]]; then
   C_RED=$'\033[31m'; C_GRN=$'\033[32m'; C_YLW=$'\033[33m'; C_BLU=$'\033[34m'; C_RST=$'\033[0m'
 else
@@ -19,10 +19,10 @@ ok()   { echo "${C_GRN}[ok]${C_RST} $*"; }
 warn() { echo "${C_YLW}[warn]${C_RST} $*" >&2; }
 die()  { echo "${C_RED}[error]${C_RST} $*" >&2; exit 1; }
 
-# 加载 .env（未创建时给指引）
+# Load .env (give guidance when not created)
 load_env() {
   if [[ ! -f "$ENV_FILE" ]]; then
-    die ".env 不存在。先 cp .env.example .env 并填入 LLM 参数。"
+    die ".env does not exist. First run cp .env.example .env and fill in the LLM params."
   fi
   set -a
   # shellcheck disable=SC1090
@@ -30,7 +30,7 @@ load_env() {
   set +a
 }
 
-# 校验一组必填变量；缺一个都不启动，一次性列出所有缺失项
+# Validate a set of required variables; if any is missing, don't start, list all missing at once
 require_vars() {
   local missing=()
   for var in "$@"; do
@@ -40,17 +40,17 @@ require_vars() {
     fi
   done
   if (( ${#missing[@]} > 0 )); then
-    echo "${C_RED}[error]${C_RST} .env 中以下必填参数未设置或仍为 REPLACE_ME：" >&2
+    echo "${C_RED}[error]${C_RST} The following required params in .env are unset or still REPLACE_ME:" >&2
     for v in "${missing[@]}"; do echo "  - $v" >&2; done
     echo "" >&2
-    echo "  编辑 $ENV_FILE 后重试。" >&2
+    echo "  Edit $ENV_FILE and retry." >&2
     exit 1
   fi
 }
 
-# 找到可用 docker 命令（兼容 Homebrew 独立安装 + colima）
-# 优先级：PATH 中的 docker → Homebrew apple silicon → Homebrew intel → /usr/local
-# Homebrew Cellar 路径下按版本 glob，取最新（sort -V），避免硬编码具体小版本号。
+# Find an available docker command (compatible with Homebrew standalone install + colima)
+# Priority: docker in PATH → Homebrew apple silicon → Homebrew intel → /usr/local
+# Under Homebrew Cellar, glob by version and take the latest (sort -V), avoiding hardcoding a specific minor version.
 find_docker() {
   if command -v docker >/dev/null 2>&1; then
     echo "docker"
@@ -72,73 +72,73 @@ find_docker() {
       return
     fi
   done
-  die "找不到 docker 命令。请先安装 Docker Desktop / OrbStack / colima + docker CLI。"
+  die "docker command not found. Install Docker Desktop / OrbStack / colima + docker CLI first."
 }
 
 DOCKER="$(find_docker)"
 
-# PULL=1 时拉取镜像最新版本。
-# 默认关闭：docker run 在本地没有镜像时会自动拉，但本地已有同名 :latest 时会直接复用，
-# 不会感知远端更新——想升级到最新 latest 就带 PULL=1。
+# Pull the latest image when PULL=1.
+# Disabled by default: docker run auto-pulls when the image is absent locally, but reuses
+# an existing same-name :latest without noticing remote updates — use PULL=1 to upgrade to the latest.
 pull_image() {
   local image="$1"
   [[ "${PULL:-0}" == "1" ]] || return 0
-  info "拉取镜像 $image"
-  $DOCKER pull "$image" || die "拉取 $image 失败。"
+  info "Pulling image $image"
+  $DOCKER pull "$image" || die "Failed to pull $image."
 }
 
-# 幂等移除同名容器
+# Idempotently remove a same-name container
 rm_container_if_exists() {
   local name="$1"
   if $DOCKER ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$name"; then
-    info "移除已存在的容器 $name"
+    info "Removing existing container $name"
     $DOCKER rm -f "$name" >/dev/null
   fi
 }
 
-# 等待容器进入 healthy 状态（或没有 healthcheck 时等 running）
+# Wait for the container to become healthy (or running when there is no healthcheck)
 wait_healthy() {
   local name="$1"
-  local timeout="${2:-90}"    # 秒
+  local timeout="${2:-90}"    # seconds
   local waited=0
-  info "等待 $name 就绪（最长 ${timeout}s）..."
+  info "Waiting for $name to be ready (max ${timeout}s)..."
   while (( waited < timeout )); do
     local status health
     status="$($DOCKER inspect -f '{{.State.Status}}' "$name" 2>/dev/null || echo "missing")"
     health="$($DOCKER inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null || echo "unknown")"
 
     if [[ "$status" != "running" ]]; then
-      warn "${name} 状态 ${status}，输出最近日志："
+      warn "${name} status ${status}, recent logs:"
       $DOCKER logs --tail 30 "$name" 2>&1 || true
-      die "${name} 未运行。"
+      die "${name} is not running."
     fi
 
     case "$health" in
       healthy) ok "$name healthy"; return 0 ;;
       unhealthy)
-        warn "${name} unhealthy，日志："
+        warn "${name} unhealthy, logs:"
         $DOCKER logs --tail 30 "$name" 2>&1 || true
-        die "${name} 健康检查失败。"
+        die "${name} health check failed."
         ;;
       none)
-        # 镜像没有 healthcheck：容器 running 就当就绪
-        ok "${name} running（无 healthcheck）"
+        # Image has no healthcheck: treat running as ready
+        ok "${name} running (no healthcheck)"
         return 0
         ;;
     esac
     sleep 2
     waited=$((waited + 2))
   done
-  warn "${name} 等待超时，最后日志："
+  warn "${name} wait timed out, last logs:"
   $DOCKER logs --tail 30 "$name" 2>&1 || true
-  die "${name} 在 ${timeout}s 内未就绪。"
+  die "${name} not ready within ${timeout}s."
 }
 
-# 打印统一的服务地址表
+# Print the unified service address table
 print_endpoints() {
   echo ""
   echo "  ┌─────────────────────────────────────────────────────────┐"
-  echo "  │ 服务地址                                                │"
+  echo "  │ Service addresses                                       │"
   echo "  ├─────────────────────────────────────────────────────────┤"
   printf "  │ Panel UI       http://localhost:%-24s│\n" "${PANEL_PORT}/"
   printf "  │ Panel API      http://localhost:%-24s│\n" "${PANEL_PORT}/api/v1/"
