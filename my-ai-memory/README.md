@@ -20,6 +20,78 @@ Raw conversations → LLM extracts facts → facts grouped into scenarios → di
 On recall, it assembles context **top-down**: persona → scenarios → atoms, capped
 by a character budget so memory never overflows the context window.
 
+## Database schema (L0 → L3)
+
+```mermaid
+erDiagram
+    %% ── L0: Raw conversations ──
+    conversations {
+        INTEGER id PK
+        TEXT session_id
+        TEXT role
+        TEXT content
+        REAL created_at
+    }
+
+    %% ── L1: Extracted atoms ──
+    atoms {
+        TEXT id PK
+        TEXT content
+        TEXT atom_type
+        TEXT source_msg_ids "JSON array of L0 ids"
+        REAL created_at
+    }
+
+    atoms_fts {
+        TEXT content
+        INTEGER content_rowid "→ atoms.rowid"
+    }
+
+    %% ── L2: Scenarios ──
+    scenarios {
+        TEXT id PK
+        TEXT title
+        TEXT content
+        TEXT source_atom_ids "JSON array of L1 ids"
+        REAL created_at
+    }
+
+    %% ── L3: Persona ──
+    persona {
+        INTEGER id PK "always 1 (single row)"
+        TEXT content
+        REAL updated_at
+    }
+
+    %% ── Pipeline state ──
+    pipeline_state {
+        TEXT session_id PK
+        INTEGER conversation_count
+        INTEGER extraction_count
+        REAL last_extraction_at
+        REAL last_aggregation_at
+    }
+
+    %% ── Relationships ──
+    conversations ||--o{ atoms : "source_msg_ids references"
+    atoms ||--o{ scenarios : "source_atom_ids references"
+    scenarios ||--o| persona : "distilled into"
+    atoms ||--o| atoms_fts : "FTS5 index (content_rowid)"
+```
+
+| Layer | Table | Relationship |
+|-------|-------|--------------|
+| **L0** | `conversations` | Raw messages, one row per message |
+| **L1** | `atoms` | Extracted facts; `source_msg_ids` (JSON) points back to L0 message IDs |
+| **L1 index** | `atoms_fts` | FTS5 virtual table for BM25 search; `content_rowid` links to `atoms.rowid` |
+| **L2** | `scenarios` | Grouped knowledge; `source_atom_ids` (JSON) points back to L1 atom IDs |
+| **L3** | `persona` | Single-row profile distilled from scenarios |
+| **State** | `pipeline_state` | Tracks extraction/aggregation counts per session |
+
+> **Note:** The layer relationships are stored as **JSON arrays** (not foreign-key
+> join tables) — a simplification vs. the normalized design in the real
+> `MemoryCore`, which uses proper relational tables + vector indexes.
+
 ## Files
 
 | File | Purpose |
